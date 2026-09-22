@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Surtidor Guadalajara</title>
+<meta name="description" content="Precios de gasolina, diésel y GLP en las gasolineras de la provincia de Guadalajara, con datos oficiales del Ministerio.">
+<meta name="theme-color" content="#1c2226">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231c2226'/%3E%3Cpath d='M9 7h10v18H9z' fill='%23ffc233'/%3E%3Cpath d='M11 9h6v5h-6z' fill='%231c2226'/%3E%3Cpath d='M19 12h3l2 3v8a1.5 1.5 0 0 1-3 0v-5h-2' fill='none' stroke='%23ffc233' stroke-width='2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{
+  --asphalt:#1c2226;
+  --bg:#f3f4f1;
+  --panel:#ffffff;
+  --ink:#1c2226;
+  --muted:#5f6a70;
+  --line:#dde1dc;
+  --chip:#eceee9;
+  --accent:#ffc233;        /* amarillo surtidor */
+  --accent-ink:#1c2226;
+  --cheap:#1e9e5a;
+  --mid:#d99a00;
+  --dear:#d2453a;
+  --none:#9aa3a7;
+  --focus:#1560bd;
+  --shadow:0 1px 2px rgba(20,28,32,.08),0 6px 20px rgba(20,28,32,.10);
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#121719;--panel:#1a2023;--ink:#e8ebe7;--muted:#9aa6ab;--line:#2c3439;--chip:#232b2f;
+    --cheap:#35c07a;--mid:#f0b429;--dear:#ef6a5e;--none:#6d777c;--focus:#6aa8ff;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#121719;--panel:#1a2023;--ink:#e8ebe7;--muted:#9aa6ab;--line:#2c3439;--chip:#232b2f;
+  --cheap:#35c07a;--mid:#f0b429;--dear:#ef6a5e;--none:#6d777c;--focus:#6aa8ff;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.45 Barlow,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;display:flex;flex-direction:column;overflow:hidden}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+/* ---------- barra superior ---------- */
+.top{background:var(--asphalt);color:#f2f3ef;padding:10px 16px;padding-top:calc(10px + env(safe-area-inset-top,0px));display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px}
+.brand{display:flex;align-items:center;gap:10px;margin-right:auto}
+.brand svg{flex:none}
+.brand h1{font:700 22px/1 "Barlow Condensed",sans-serif;letter-spacing:.02em;margin:0;text-transform:uppercase}
+.brand small{display:block;font:500 12px/1.2 Barlow,sans-serif;color:#aab4b8;letter-spacing:.02em;text-transform:none}
+.fuels{display:flex;gap:4px;background:#2a3237;padding:4px;border-radius:10px}
+.fuels button{border:0;background:transparent;color:#cfd6d9;padding:6px 12px;border-radius:7px;cursor:pointer;font:600 15px/1.1 "Barlow Condensed",sans-serif;letter-spacing:.03em;text-transform:uppercase;white-space:nowrap}
+.fuels button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.fuels button:hover:not([aria-pressed="true"]){background:#353e44;color:#fff}
+.actions{display:flex;gap:8px}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid #3a444a;background:#262e33;color:#f2f3ef;padding:7px 12px;border-radius:9px;cursor:pointer;font-weight:600;white-space:nowrap}
+.btn:hover{background:#313a40}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.primary:hover{filter:brightness(1.05)}
+.btn[disabled]{opacity:.6;cursor:progress}
+.btn svg{width:17px;height:17px}
+.spin svg{animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ---------- estado ---------- */
+.status{display:flex;flex-wrap:wrap;gap:4px 14px;align-items:center;padding:7px 16px;background:var(--panel);border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)}
+.status b{color:var(--ink);font-weight:600}
+.status .err{color:var(--dear);font-weight:600}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px}
+.legend{display:flex;gap:12px;margin-left:auto}
+
+/* ---------- cuerpo ---------- */
+.main{flex:1;min-height:0;display:grid;grid-template-columns:380px 1fr}
+.side{display:flex;flex-direction:column;min-height:0;background:var(--panel);border-right:1px solid var(--line)}
+.side-head{padding:12px 16px;display:grid;grid-template-columns:1fr auto;gap:8px;border-bottom:1px solid var(--line)}
+.side-head input,.side-head select{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+.summary{grid-column:1/-1;font-size:13px;color:var(--muted)}
+.list{list-style:none;margin:0;padding:0;overflow:auto;flex:1}
+.item{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);cursor:pointer}
+.item:hover,.item.sel{background:var(--chip)}
+.rank{font:600 13px/1 "Barlow Condensed",sans-serif;color:var(--muted);width:22px;text-align:right;font-variant-numeric:tabular-nums}
+.name{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.where{grid-column:2;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:-4px}
+.price{grid-row:1/span 2;grid-column:3;text-align:right}
+.plate{display:inline-block;background:var(--asphalt);color:#fff;font:700 21px/1 "Barlow Condensed",sans-serif;padding:5px 8px 4px;border-radius:6px;font-variant-numeric:tabular-nums;border-bottom:3px solid var(--c,var(--none))}
+.plate sub{font-size:12px;vertical-align:baseline;margin-left:1px;color:#b9c2c6;font-weight:600}
+.dist{display:block;font-size:12px;color:var(--muted);margin-top:3px}
+.empty{padding:24px 16px;color:var(--muted)}
+
+#map{min-height:0;background:#dfe3dc}
+.leaflet-container{font:inherit}
+
+/* marcadores: mini totem de precio */
+.pin{position:relative;transform:translate(-50%,-100%);display:inline-block}
+.pin span{display:block;background:var(--asphalt);color:#fff;font:700 14px/1 "Barlow Condensed",sans-serif;padding:4px 6px 3px;border-radius:5px;border-bottom:3px solid var(--c);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);font-variant-numeric:tabular-nums}
+.pin::after{content:"";position:absolute;left:50%;bottom:-5px;margin-left:-5px;border:5px solid transparent;border-top-color:var(--c);border-bottom:0}
+.pin.sel span{outline:2px solid var(--accent);outline-offset:1px;transform:scale(1.15)}
+.pin.na span{background:#7c868b;border-bottom-color:#7c868b;font-size:11px;opacity:.85}
+.pin.na::after{border-top-color:#7c868b}
+.me-dot{width:16px;height:16px;border-radius:50%;background:var(--focus);border:3px solid #fff;box-shadow:0 0 0 6px rgba(21,96,189,.25)}
+
+.leaflet-popup-content-wrapper{border-radius:10px;background:var(--panel);color:var(--ink);box-shadow:var(--shadow)}
+.leaflet-popup-tip{background:var(--panel)}
+.leaflet-popup-content{margin:12px 14px;min-width:220px}
+.pop h3{margin:0 0 2px;font:700 19px/1.1 "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.02em}
+.pop .addr{color:var(--muted);font-size:13px;margin-bottom:8px}
+.pop table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin-bottom:8px}
+.pop td{padding:3px 0;border-top:1px solid var(--line)}
+.pop td:last-child{text-align:right;font-weight:600}
+.pop tr.cur td{color:var(--ink);font-weight:700}
+.pop .hours{font-size:12px;color:var(--muted);margin-bottom:10px}
+.pop a.go{display:flex;justify-content:center;align-items:center;gap:6px;background:var(--accent);color:var(--accent-ink);text-decoration:none;font-weight:700;padding:8px;border-radius:8px}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--asphalt);color:#fff;padding:9px 14px;border-radius:9px;box-shadow:var(--shadow);z-index:2000;font-weight:500;max-width:calc(100% - 32px)}
+
+/* ---------- móvil ---------- */
+@media (max-width:760px){
+  .top{gap:8px}
+  .brand h1{font-size:20px}
+  .fuels{order:3;width:100%}
+  .fuels button{flex:1;padding:7px 4px}
+  .btn .lbl{display:none}
+  .legend{display:none}
+  .main{grid-template-columns:1fr;grid-template-rows:1fr auto}
+  #map{grid-row:1}
+  .side{grid-row:2;border-right:0;border-top:1px solid var(--line);max-height:44vh;transition:max-height .25s}
+  .side.collapsed{max-height:108px}
+  .grab{display:block!important}
+}
+.grab{display:none;border:0;background:transparent;width:100%;padding:6px 0 0;cursor:pointer}
+.grab i{display:block;margin:0 auto;width:40px;height:4px;border-radius:2px;background:var(--line)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <svg width="34" height="34" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="#2a3237"/><path d="M9 7h10v18H9z" fill="#ffc233"/><path d="M11 9h6v5h-6z" fill="#2a3237"/><path d="M19 12h3l2 3v8a1.5 1.5 0 0 1-3 0v-5h-2" fill="none" stroke="#ffc233" stroke-width="2"/></svg>
+    <h1>Surtidor Guadalajara<small>Precios oficiales de hoy, provincia de Guadalajara</small></h1>
+  </div>
+  <nav class="fuels" aria-label="Carburante">
+    <button type="button" data-fuel="g95">Gasolina 95</button>
+    <button type="button" data-fuel="g98">Gasolina 98</button>
+    <button type="button" data-fuel="dsl">Diésel</button>
+    <button type="button" data-fuel="glp">GLP</button>
+  </nav>
+  <div class="actions">
+    <button type="button" class="btn" id="locate" title="Centrar en mi ubicación">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span class="lbl">Mi ubicación</span>
+    </button>
+    <button type="button" class="btn primary" id="refresh" title="Descargar los precios más recientes">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><span class="lbl">Actualizar</span>
+    </button>
+  </div>
+</header>
+
+<div class="status" id="status" role="status" aria-live="polite">
+  <span id="stamp">Cargando precios…</span>
+  <span class="legend" aria-hidden="true">
+    <span><i class="dot" style="background:var(--cheap)"></i>Barata</span>
+    <span><i class="dot" style="background:var(--mid)"></i>Media</span>
+    <span><i class="dot" style="background:var(--dear)"></i>Cara</span>
+  </span>
+</div>
+
+<div class="main">
+  <aside class="side" id="side">
+    <button type="button" class="grab" id="grab" aria-label="Mostrar u ocultar la lista"><i></i></button>
+    <div class="side-head">
+      <input id="q" type="search" placeholder="Buscar pueblo o marca…" aria-label="Buscar pueblo o marca" autocomplete="off">
+      <select id="sort" aria-label="Ordenar">
+        <option value="price">Más barata</option>
+        <option value="dist">Más cercana</option>
+      </select>
+      <div class="summary" id="summary"></div>
+    </div>
+    <ol class="list" id="list"></ol>
+  </aside>
+  <div id="map" aria-label="Mapa de gasolineras"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(() => {
+  // Provincia (código INE). 19 = Guadalajara.
+  const PROVINCIA = 19;
+  const API = `https://sedeaplicaciones.minetur.gob.es/ServiciosRESTCarburantes/PreciosCarburantes/EstacionesTerrestres/FiltroProvincia/${PROVINCIA}`;
+  const CACHE_KEY = 'surtidor-gu-v1';
+  const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
+
+  const FUELS = {
+    g95: { label: 'Gasolina 95', short: '95',     key: 'precio gasolina 95 e5' },
+    g98: { label: 'Gasolina 98', short: '98',     key: 'precio gasolina 98 e5' },
+    dsl: { label: 'Diésel',      short: 'Diésel', key: 'precio gasoleo a' },
+    glp: { label: 'GLP',         short: 'GLP',    key: 'precio gases licuados del petroleo' },
+  };
+
+  const $ = s => document.querySelector(s);
+  const store = {
+    get(k){ try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } },
+    set(k,v){ try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const norm = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+  const num = s => { const n = parseFloat(String(s || '').replace(',', '.')); return isFinite(n) && n > 0 ? n : null; };
+  const title = s => String(s || '').toLowerCase().replace(/(^|[\s\-/(])(\p{L})/gu, (m, a, b) => a + b.toUpperCase());
+  const fmt = p => p.toFixed(3).replace('.', ',');
+
+  const saved = store.get('surtidor-prefs') || {};
+  const state = {
+    fuel: FUELS[saved.fuel] ? saved.fuel : 'g95',
+    sort: 'price',
+    q: '',
+    stations: [],
+    fecha: null,
+    me: null,
+    selected: null,
+  };
+
+  // ---------- mapa ----------
+  const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([40.75, -2.6], 9);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, subdomains: 'abc',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Precios: <a href="https://geoportalgasolineras.es/">Ministerio para la Transición Ecológica</a>',
+  }).addTo(map);
+  const layer = L.layerGroup().addTo(map);
+  let meMarker = null;
+  const markers = new Map();
+
+  // ---------- datos ----------
+  function parse(json){
+    return (json.ListaEESSPrecio || []).map(raw => {
+      const r = {};
+      for (const k in raw) r[norm(k)] = raw[k];
+      const prices = {};
+      for (const f in FUELS) prices[f] = num(r[FUELS[f].key]);
+      return {
+        id: r.ideess,
+        brand: (r.rotulo || 'Sin marca').trim(),
+        address: title(r.direccion),
+        town: title(r.municipio || r.localidad),
+        locality: title(r.localidad),
+        cp: r['c.p.'],
+        hours: r.horario,
+        lat: num(r.latitud),
+        lng: parseFloat(String(r['longitud (wgs84)']).replace(',', '.')),
+        prices,
+      };
+    }).filter(s => s.lat && isFinite(s.lng));
+  }
+
+  function applyData(json, fromCache){
+    state.stations = parse(json);
+    state.fecha = json.Fecha || null;
+    render(true);
+    setStamp(fromCache);
+  }
+
+  let loading = false;
+  async function load({ quiet = false } = {}){
+    if (loading) return;
+    loading = true;
+    const btn = $('#refresh');
+    btn.disabled = true; btn.classList.add('spin');
+    try {
+      const res = await fetch(API, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const json = await res.json();
+      if (!json.ListaEESSPrecio) throw new Error('respuesta vacía');
+      const changed = json.Fecha !== state.fecha;
+      store.set(CACHE_KEY, json);
+      applyData(json, false);
+      if (!quiet) toast(changed ? 'Precios actualizados' : 'Ya tenías los precios más recientes');
+    } catch (e) {
+      console.error(e);
+      setStamp(!!state.fecha, 'No se pudo conectar con el Ministerio. Revisa tu conexión y pulsa Actualizar.');
+    } finally {
+      loading = false;
+      btn.disabled = false; btn.classList.remove('spin');
+    }
+  }
+
+  function setStamp(fromCache, error){
+    const el = $('#stamp');
+    const n = state.stations.length;
+    const withFuel = state.stations.filter(s => s.prices[state.fuel] != null).length;
+    let html = state.fecha
+      ? `Datos del Ministerio: <b>${esc(state.fecha.replace(/:\d\d$/, ''))}</b> · ${n} gasolineras, ${withFuel} con ${FUELS[state.fuel].label}`
+      : 'Sin datos todavía';
+    if (fromCache && !error) html += ' · (copia guardada, comprobando…)';
+    if (error) html += ` · <span class="err">${esc(error)}</span>`;
+    el.innerHTML = html;
+  }
+
+  // ---------- colores por precio ----------
+  function thresholds(list){
+    const p = list.map(s => s.prices[state.fuel]).filter(v => v != null).sort((a, b) => a - b);
+    if (!p.length) return [0, 0];
+    const q = f => p[Math.min(p.length - 1, Math.floor(f * p.length))];
+    return [q(1/3), q(2/3)];
+  }
+  const colorFor = (p, [a, b]) => p == null ? 'var(--none)' : p <= a ? 'var(--cheap)' : p <= b ? 'var(--mid)' : 'var(--dear)';
+
+  // ---------- distancia ----------
+  function km(a, b){
+    const R = 6371, rad = x => x * Math.PI / 180;
+    const dLat = rad(b.lat - a.lat), dLng = rad(b.lng - a.lng);
+    const h = Math.sin(dLat/2)**2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng/2)**2;
+    return 2 * R * Math.asin(Math.sqrt(h));
+  }
+  const fmtKm = d => d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(d < 10 ? 1 : 0).replace('.', ',')} km`;
+
+  // ---------- pintar ----------
+  function render(fit){
+    const f = state.fuel;
+    document.querySelectorAll('.fuels button').forEach(b => b.setAttribute('aria-pressed', b.dataset.fuel === f));
+
+    const q = norm(state.q);
+    const matches = s => !q || norm(`${s.brand} ${s.town} ${s.locality} ${s.address} ${s.cp}`).includes(q);
+    const visible = state.stations.filter(matches);
+    const th = thresholds(state.stations);
+
+    // marcadores
+    layer.clearLayers(); markers.clear();
+    for (const s of visible){
+      const p = s.prices[f];
+      const cls = ['pin', p == null ? 'na' : '', s.id === state.selected ? 'sel' : ''].join(' ');
+      const icon = L.divIcon({
+        className: '', iconSize: null,
+        html: `<div class="${cls}" style="--c:${colorFor(p, th)}"><span>${p == null ? esc(s.brand.slice(0, 10)) : fmt(p)}</span></div>`,
+      });
+      const m = L.marker([s.lat, s.lng], { icon, zIndexOffset: p == null ? -1000 : Math.round((3 - p) * 1000), title: s.brand, keyboard: true })
+        .bindPopup(() => popup(s), { maxWidth: 280 })
+        .on('click', () => select(s.id, false));
+      m.addTo(layer);
+      markers.set(s.id, m);
+    }
+
+    // lista
+    const withPrice = visible.filter(s => s.prices[f] != null);
+    if (state.me) withPrice.forEach(s => s.d = km(state.me, s));
+    const bySort = state.sort === 'dist' && state.me
+      ? (a, b) => a.d - b.d
+      : (a, b) => a.prices[f] - b.prices[f] || (a.d ?? 0) - (b.d ?? 0);
+    withPrice.sort(bySort);
+
+    const list = $('#list');
+    if (!state.stations.length){
+      list.innerHTML = '<li class="empty">Descargando precios…</li>';
+    } else if (!withPrice.length){
+      list.innerHTML = `<li class="empty">Ninguna gasolinera ${q ? 'que coincida con la búsqueda ' : ''}vende ${esc(FUELS[f].label)}.</li>`;
+    } else {
+      list.innerHTML = withPrice.map((s, i) => `
+        <li class="item${s.id === state.selected ? ' sel' : ''}" data-id="${esc(s.id)}" tabindex="0">
+          <span class="rank">${i + 1}</span>
+          <span class="name">${esc(title(s.brand))}</span>
+          <span class="price"><span class="plate" style="--c:${colorFor(s.prices[f], th)}">${fmt(s.prices[f])}<sub>€/l</sub></span>${s.d != null ? `<span class="dist">${fmtKm(s.d)}</span>` : ''}</span>
+          <span class="where">${esc(s.town)} · ${esc(s.address)}</span>
+        </li>`).join('');
+    }
+
+    const cheapest = withPrice.length ? Math.min(...withPrice.map(s => s.prices[f])) : null;
+    const avg = withPrice.length ? withPrice.reduce((t, s) => t + s.prices[f], 0) / withPrice.length : null;
+    $('#summary').textContent = withPrice.length
+      ? `${withPrice.length} con ${FUELS[f].label} · desde ${fmt(cheapest)} €/l · media ${fmt(avg)} €/l`
+      : '';
+
+    if (fit && visible.length && !state.selected){
+      const pts = (withPrice.length ? withPrice : visible).map(s => [s.lat, s.lng]);
+      if (state.me && state.sort === 'dist') pts.splice(8), pts.push([state.me.lat, state.me.lng]);
+      map.invalidateSize();
+      map.fitBounds(pts, { padding: [50, 50], maxZoom: 13, animate: false });
+    }
+    setStamp(false);
+  }
+
+  function popup(s){
+    const rows = Object.entries(FUELS).map(([k, f]) => {
+      const p = s.prices[k];
+      return p == null ? '' : `<tr class="${k === state.fuel ? 'cur' : ''}"><td>${f.label}</td><td>${fmt(p)} €/l</td></tr>`;
+    }).join('') || '<tr><td>Sin precios de estos carburantes</td><td></td></tr>';
+    const go = `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lng}`;
+    const dist = state.me ? ` · a ${fmtKm(km(state.me, s))}` : '';
+    return `<div class="pop">
+      <h3>${esc(title(s.brand))}</h3>
+      <div class="addr">${esc(s.address)}, ${esc(s.locality || s.town)}${dist}</div>
+      <table>${rows}</table>
+      ${s.hours ? `<div class="hours">Horario: ${esc(s.hours)}</div>` : ''}
+      <a class="go" href="${go}" target="_blank" rel="noopener">Cómo llegar (Google Maps)</a>
+    </div>`;
+  }
+
+  function select(id, fly){
+    state.selected = id;
+    document.querySelectorAll('.item').forEach(el => el.classList.toggle('sel', el.dataset.id === id));
+    document.querySelectorAll('.pin.sel').forEach(el => el.classList.remove('sel'));
+    const m = markers.get(id);
+    if (!m) return;
+    m.getElement()?.querySelector('.pin')?.classList.add('sel');
+    if (fly){
+      map.flyTo(m.getLatLng(), Math.max(map.getZoom(), 14), { duration: .6 });
+      map.once('moveend', () => m.openPopup());
+      if (matchMedia('(max-width:760px)').matches) $('#side').classList.add('collapsed');
+    }
+  }
+
+  // ---------- ubicación ----------
+  function locate(){
+    if (!navigator.geolocation){ toast('Tu navegador no permite obtener la ubicación'); return; }
+    const btn = $('#locate'); btn.disabled = true;
+    navigator.geolocation.getCurrentPosition(pos => {
+      btn.disabled = false;
+      state.me = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+      if (meMarker) meMarker.remove();
+      meMarker = L.marker([state.me.lat, state.me.lng], {
+        icon: L.divIcon({ className: '', html: '<div class="me-dot"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }),
+        zIndexOffset: 5000, title: 'Estás aquí',
+      }).addTo(map);
+      state.sort = 'dist'; $('#sort').value = 'dist';
+      state.selected = null;
+      render(false);
+      map.flyTo([state.me.lat, state.me.lng], 12, { duration: .8 });
+    }, err => {
+      btn.disabled = false;
+      toast(err.code === 1 ? 'Permiso de ubicación denegado. Actívalo en el navegador para usarlo.' : 'No se pudo obtener tu ubicación');
+    }, { enableHighAccuracy: true, timeout: 12000, maximumAge: 60000 });
+  }
+
+  let toastTimer;
+  function toast(msg){
+    let t = $('.toast');
+    if (!t){ t = document.createElement('div'); t.className = 'toast'; t.setAttribute('role', 'status'); document.body.appendChild(t); }
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.hidden = true, 2600);
+  }
+
+  // ---------- eventos ----------
+  document.querySelectorAll('.fuels button').forEach(b => b.addEventListener('click', () => {
+    state.fuel = b.dataset.fuel; state.selected = null;
+    store.set('surtidor-prefs', { fuel: state.fuel });
+    map.closePopup(); render(false);
+  }));
+  $('#refresh').addEventListener('click', () => load());
+  $('#locate').addEventListener('click', locate);
+  $('#q').addEventListener('input', e => { state.q = e.target.value; state.selected = null; render(true); });
+  $('#sort').addEventListener('change', e => {
+    state.sort = e.target.value;
+    if (state.sort === 'dist' && !state.me){ locate(); return; }
+    render(false);
+  });
+  const pick = el => { const li = el.closest('.item'); if (li) select(li.dataset.id, true); };
+  $('#list').addEventListener('click', e => pick(e.target));
+  $('#list').addEventListener('keydown', e => { if (e.key === 'Enter') pick(e.target); });
+  $('#grab').addEventListener('click', () => $('#side').classList.toggle('collapsed'));
+  map.on('popupclose', () => { state.selected = null; document.querySelectorAll('.sel').forEach(el => el.classList.remove('sel')); });
+
+  // Actualización automática: al abrir, cada 30 min, y al volver a la pestaña
+  let last = 0;
+  const autoLoad = () => { last = Date.now(); load({ quiet: true }); };
+  setInterval(() => { if (!document.hidden) autoLoad(); }, AUTO_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - last > AUTO_MS) autoLoad(); });
+
+  addEventListener('resize', () => map.invalidateSize());
+
+  // Arranque: pinta la última copia al instante y descarga la nueva
+  const cached = store.get(CACHE_KEY);
+  if (cached && cached.ListaEESSPrecio) applyData(cached, true); else render(false);
+  autoLoad();
+})();
+</script>
+</body>
+</html>
