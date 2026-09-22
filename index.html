@@ -28,19 +28,21 @@
   --dear:#d2453a;
   --none:#9aa3a7;
   --focus:#1560bd;
+  --top:#8b2fd6;           /* la más barata: fuera de la escala verde-amarillo-rojo */
+  --top-ink:#ffffff;
   --shadow:0 1px 2px rgba(20,28,32,.08),0 6px 20px rgba(20,28,32,.10);
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
     --bg:#121719;--panel:#1a2023;--ink:#e8ebe7;--muted:#9aa6ab;--line:#2c3439;--chip:#232b2f;
-    --cheap:#35c07a;--mid:#f0b429;--dear:#ef6a5e;--none:#6d777c;--focus:#6aa8ff;
+    --cheap:#35c07a;--mid:#f0b429;--dear:#ef6a5e;--none:#6d777c;--focus:#6aa8ff;--top:#c07af0;--top-ink:#1c1226;
     --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);color-scheme:dark;
   }
 }
 :root[data-theme="dark"]{
   --bg:#121719;--panel:#1a2023;--ink:#e8ebe7;--muted:#9aa6ab;--line:#2c3439;--chip:#232b2f;
-  --cheap:#35c07a;--mid:#f0b429;--dear:#ef6a5e;--none:#6d777c;--focus:#6aa8ff;
+  --cheap:#35c07a;--mid:#f0b429;--dear:#ef6a5e;--none:#6d777c;--focus:#6aa8ff;--top:#c07af0;--top-ink:#1c1226;
   --shadow:0 1px 2px rgba(0,0,0,.4),0 6px 20px rgba(0,0,0,.35);color-scheme:dark;
 }
 *{box-sizing:border-box}
@@ -151,6 +153,17 @@ button,input,select{font:inherit;color:inherit}
 .pin{position:relative;transform:translate(-50%,-100%);display:inline-block}
 .pin span{display:block;background:var(--asphalt);color:#fff;font:700 14px/1 "Barlow Condensed",sans-serif;padding:4px 6px 3px;border-radius:5px;border-bottom:3px solid var(--c);white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35);font-variant-numeric:tabular-nums}
 .pin::after{content:"";position:absolute;left:50%;bottom:-5px;margin-left:-5px;border:5px solid transparent;border-top-color:var(--c);border-bottom:0}
+.pin.top span{background:var(--top);color:var(--top-ink);border-bottom-color:var(--top);font-size:15px;padding:5px 8px 4px;box-shadow:0 2px 8px rgba(139,47,214,.5)}
+.pin.top::after{border-top-color:var(--top)}
+.pin.top span::before{content:"★ ";font-size:12px}
+.cl.top{background:var(--top);border-color:var(--top)}
+.cl.top b{color:var(--top-ink)}
+.cl.top span{color:var(--top-ink);opacity:.8}
+.cl.top b::before{content:"★ ";font-size:10px}
+.plate.top{background:var(--top);border-bottom-color:var(--top)}
+.plate.top sub{color:rgba(255,255,255,.75)}
+.item.top .name::after{content:"La más barata";display:inline-block;margin-left:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:4px;background:var(--top);color:var(--top-ink);vertical-align:1px}
+.legend .top{color:var(--top);font-weight:600}
 .pin.sel span{outline:2px solid var(--accent);outline-offset:1px;transform:scale(1.15)}
 .pin.na span{background:#7c868b;border-bottom-color:#7c868b;font-size:11px;opacity:.85}
 .pin.na::after{border-top-color:#7c868b}
@@ -272,6 +285,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     <span><i class="dot" style="background:var(--cheap)"></i>Barata</span>
     <span><i class="dot" style="background:var(--mid)"></i>Media</span>
     <span><i class="dot" style="background:var(--dear)"></i>Cara</span>
+    <span class="top"><i class="dot" style="background:var(--top)"></i>La más barata</span>
   </span>
 </div>
 
@@ -288,8 +302,8 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
       <div class="filters" id="filters">
       <input id="q" type="search" placeholder="Busca un pueblo de España: Alcalá de Henares…" aria-label="Buscar pueblo o marca" autocomplete="off">
       <select id="sort" aria-label="Ordenar">
-        <option value="near">Barata y cerca</option>
         <option value="price">Más barata</option>
+        <option value="near">Barata y cerca</option>
         <option value="dist">Más cercana</option>
       </select>
       <div class="suggest" id="suggest" hidden></div>
@@ -397,7 +411,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     ['51','Ceuta',35.891,-5.322],
     ['52','Melilla',35.284,-2.942]
   ].map(([id, name, lat, lng]) => ({ id, name, lat, lng }));
-  const VERSION = '20260923-0018';        // se compara con version.txt para no quedarte con una copia vieja
+  const VERSION = '20260923-0026';        // se compara con version.txt para no quedarte con una copia vieja
   const PAGE = 50;                 // filas de lista por tanda: pintar 600 de golpe va lento
   const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
 
@@ -437,7 +451,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
   }
   const state = {
     fuel: FUELS[saved.fuel] ? saved.fuel : 'g95',
-    sort: ['near', 'price', 'dist'].includes(saved.sort) ? saved.sort : 'near',
+    sort: ['near', 'price', 'dist'].includes(saved.sort) ? saved.sort : 'price',
     radius: [5, 10, 15].includes(saved.radius) ? saved.radius : 10,
     todas: saved.todas ?? true,        // por defecto, las 52 provincias
     provs: Array.isArray(saved.provs) && saved.provs.length ? saved.provs : [saved.prov || HOME],
@@ -475,12 +489,16 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     chunkedLoading: true,
     iconCreateFunction: cluster => {
       const ms = cluster.getAllChildMarkers();
-      let min = null;
-      for (const m of ms){ const p = m.options.precio; if (p != null && (min == null || p < min)) min = p; }
+      let min = null, top = false;
+      for (const m of ms){
+        const p = m.options.precio;
+        if (p != null && (min == null || p < min)) min = p;
+        if (m.options.top) top = true;
+      }
       const c = min == null ? 'var(--none)' : colorFor(min, lastTh);
       return L.divIcon({
         className: '', iconSize: [46, 46],
-        html: `<div class="cl" style="--c:${c}"><b>${min == null ? '—' : fmt(min)}</b><span>${ms.length}</span></div>`,
+        html: `<div class="cl${top ? ' top' : ''}" style="--c:${c}"><b>${min == null ? '—' : fmt(min)}</b><span>${ms.length}</span></div>`,
       });
     },
   }).addTo(map);
@@ -855,7 +873,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
 
   // Marcadores: solo los del trozo de mapa que se está viendo. Con 11.000 gasolineras,
   // crearlas todas en cada cambio va lento, y las de fuera de pantalla no se ven igual.
-  let enMapa = [];
+  let enMapa = [], topId = null;
   const MAX_PINTADOS = 1200;
   function paintMarkers(){
     const f = state.fuel;
@@ -867,18 +885,24 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
         // Aun así son demasiadas: se quedan las más baratas, que son las que importan
         lista = lista.slice().sort((a, b2) => a.prices[f] - b2.prices[f]).slice(0, MAX_PINTADOS);
       }
+      // La más barata se pinta siempre, aunque caiga fuera de la pantalla
+      if (topId && !lista.some(x => x.id === topId)){
+        const t = enMapa.find(x => x.id === topId);
+        if (t) lista = [t, ...lista];
+      }
     }
     const nuevos = [];
     markers.clear();
     for (const s of lista){
       const p = s.prices[f];
       const abierta = openState(s).open !== false;
-      const cls = ['pin', s.id === state.selected ? 'sel' : '', abierta ? '' : 'closed'].join(' ');
+      const esTop = s.id === topId;
+      const cls = ['pin', esTop ? 'top' : '', s.id === state.selected ? 'sel' : '', abierta ? '' : 'closed'].join(' ');
       const icon = L.divIcon({
         className: '', iconSize: null,
         html: `<div class="${cls}" style="--c:${colorFor(p, lastTh)}"><span>${fmt(p)}</span></div>`,
       });
-      const m = L.marker([s.lat, s.lng], { icon, precio: p, zIndexOffset: Math.round((3 - p) * 1000), title: s.brand, keyboard: true })
+      const m = L.marker([s.lat, s.lng], { icon, precio: p, top: esTop, zIndexOffset: esTop ? 9000 : Math.round((3 - p) * 1000), title: s.brand, keyboard: true })
         .bindPopup(() => popup(s), { maxWidth: 280 })
         .on('click', () => select(s.id, false));
       nuevos.push(m);
@@ -923,6 +947,10 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     // marcadores
     lastTh = th;
     enMapa = visible.filter(s => s.prices[f] != null);
+    // La más barata de lo que estás viendo: se marca en violeta en mapa y lista
+    topId = null;
+    let topP = null;
+    for (const st of enMapa){ const pr = st.prices[f]; if (topP == null || pr < topP){ topP = pr; topId = st.id; } }
     paintMarkers();
 
     // lista
@@ -952,10 +980,10 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     } else {
       const top = withPrice.slice(0, state.limit);
       list.innerHTML = top.map((s, i) => `
-        <li class="item${s.id === state.selected ? ' sel' : ''}${isOpen(s) ? '' : ' closed'}" data-id="${esc(s.id)}" tabindex="0">
+        <li class="item${s.id === topId ? ' top' : ''}${s.id === state.selected ? ' sel' : ''}${isOpen(s) ? '' : ' closed'}" data-id="${esc(s.id)}" tabindex="0">
           <span class="rank">${i + 1}</span>
           <span class="name">${esc(title(s.brand))}${isOpen(s) ? '' : '<span class="tag">Cerrada</span>'}</span>
-          <span class="price"><span class="plate" style="--c:${colorFor(s.prices[f], th)}">${fmt(s.prices[f])}<sub>€/l</sub></span>${where(s)}${saving(s, ref)}</span>
+          <span class="price"><span class="plate${s.id === topId ? ' top' : ''}" style="--c:${colorFor(s.prices[f], th)}">${fmt(s.prices[f])}<sub>€/l</sub></span>${where(s)}${saving(s, ref)}</span>
           <span class="where">${esc(s.town)} · ${esc(s.address)}</span>
         </li>`).join('') + (withPrice.length > top.length
           ? `<li class="more"><button type="button" id="more">Ver ${Math.min(PAGE, withPrice.length - top.length)} más <small>de ${withPrice.length}</small></button></li>`
