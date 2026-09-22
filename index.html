@@ -89,6 +89,21 @@ button,input,select{font:inherit;color:inherit}
 .best .n{font-weight:700;font-size:16px}
 .best .w{grid-column:1;font-size:13px;color:var(--muted)}
 .best .plate{grid-row:2/span 2;grid-column:2}
+.opts{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:13px;color:var(--muted)}
+.chk{display:inline-flex;align-items:center;gap:6px;color:var(--ink);font-weight:600;cursor:pointer}
+.chk input{width:16px;height:16px;accent-color:var(--cheap);margin:0}
+.car input{width:52px;padding:3px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);text-align:right;font-variant-numeric:tabular-nums}
+.save{display:block;font-size:12px;font-weight:600;margin-top:2px}
+.save.pos{color:var(--cheap)} .save.neg{color:var(--muted);font-weight:500}
+.tag{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 5px;border-radius:4px;background:var(--dear);color:#fff;margin-left:6px;vertical-align:1px}
+.item.closed .name,.item.closed .where{opacity:.6}
+.pin.closed{opacity:.5}
+.best .x{grid-column:1/-1;font-size:13px;margin-top:4px;padding-top:6px;border-top:1px solid var(--line)}
+.best .x b{color:var(--cheap)}
+.pop .open{font-size:13px;font-weight:600;margin-bottom:8px}
+.pop .open.y{color:var(--cheap)} .pop .open.n{color:var(--dear)}
+.pop .fill{font-size:13px;margin-bottom:10px;padding:8px;border-radius:8px;background:var(--chip)}
+.pop .fill b{font-variant-numeric:tabular-nums}
 .best.msg{display:block;border-style:dashed;border-color:var(--line);color:var(--muted);cursor:default}
 .list{list-style:none;margin:0;padding:0;overflow:auto;flex:1}
 .item{display:grid;grid-template-columns:auto 1fr auto;gap:4px 12px;align-items:center;padding:10px 16px;border-bottom:1px solid var(--line);cursor:pointer}
@@ -196,6 +211,10 @@ button,input,select{font:inherit;color:inherit}
         <button type="button" data-min="15">15 min</button>
         <span>en coche</span>
       </div>
+      <div class="opts">
+        <label class="chk"><input type="checkbox" id="openOnly"> Solo abiertas ahora</label>
+        <span class="car">Echo <input id="litres" type="number" min="5" max="150" step="1" inputmode="numeric" aria-label="Litros a repostar"> L · gasta <input id="cons" type="number" min="2" max="25" step="0.1" inputmode="decimal" aria-label="Consumo en litros cada 100 km"> L/100 km</span>
+      </div>
       <div class="best" id="best" hidden></div>
       <div class="summary" id="summary"></div>
     </div>
@@ -236,6 +255,9 @@ button,input,select{font:inherit;color:inherit}
     fuel: FUELS[saved.fuel] ? saved.fuel : 'g95',
     sort: ['near', 'price', 'dist'].includes(saved.sort) ? saved.sort : 'near',
     radius: [5, 10, 15].includes(saved.radius) ? saved.radius : 10,
+    openOnly: saved.openOnly ?? true,
+    litres: saved.litres > 0 ? saved.litres : 50,
+    cons: saved.cons > 0 ? saved.cons : 6,
     times: new Map(),     // id -> { min, km } en coche desde mi ubicación
     timesApprox: false,
     timesPending: false,
@@ -257,6 +279,81 @@ button,input,select{font:inherit;color:inherit}
   let meMarker = null;
   const markers = new Map();
 
+  // ---------- horarios ----------
+  // Formatos del Ministerio: "L-D: 24H", "L-V: 06:00-22:00; S-D: 07:00-22:00", "L-S: 08:00-14:00 y 16:00-20:00", "V: 07:00-01:00"…
+  const DAYS = 'LMXJVSD';
+  function parseHours(h){
+    if (!h) return null;
+    const rules = [];
+    for (const part of h.split(';')){
+      const m = part.trim().match(/^([LMXJVSD])(?:-([LMXJVSD]))?:\s*(.+)$/);
+      if (!m) return null;
+      const a = DAYS.indexOf(m[1]), b = m[2] ? DAYS.indexOf(m[2]) : a;
+      const days = [];
+      for (let d = a; ; d = (d + 1) % 7){ days.push(d); if (d === b) break; }
+      const ranges = [];
+      for (const r of m[3].split(/\s+y\s+/)){
+        if (/^24\s*H$/i.test(r.trim())){ ranges.push([0, 1440]); continue; }
+        const t = r.trim().match(/^(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$/);
+        if (!t) return null;
+        const start = +t[1] * 60 + +t[2];
+        let end = +t[3] * 60 + +t[4];
+        if (end === 0 || end === 1439) end = 1440; // "00:00" o "23:59" = hasta medianoche
+        ranges.push([start, end]);
+      }
+      rules.push({ days, ranges });
+    }
+    // "L: 24H" a secas es casi siempre un error al rellenarlo: se entiende como todos los días
+    if (rules.length === 1 && rules[0].days.length === 1) rules[0].days = [0, 1, 2, 3, 4, 5, 6];
+    return rules;
+  }
+  // { open: true|false|null, until: minuto del cierre }
+  function openState(s, now = new Date()){
+    if (s.h24) return { open: true, until: null };
+    if (!s.sched) return { open: null };
+    const d = (now.getDay() + 6) % 7, prev = (d + 6) % 7, t = now.getHours() * 60 + now.getMinutes();
+    for (const r of s.sched){
+      for (const [a, e] of r.ranges){
+        if (r.days.includes(d) && (e > a ? t >= a && t < e : t >= a)) return { open: true, until: e };
+        if (r.days.includes(prev) && e <= a && t < e) return { open: true, until: e };
+      }
+    }
+    return { open: false };
+  }
+  const hhmm = m => `${String(Math.floor(m / 60) % 24).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  function openLabel(s){
+    const o = openState(s);
+    if (o.open === null) return '';
+    if (!o.open) return '<div class="open n">Cerrada ahora</div>';
+    if (o.until == null) return '<div class="open y">Abierta 24 horas</div>';
+    return `<div class="open y">Abierta ahora · cierra a las ${hhmm(o.until)}</div>`;
+  }
+
+  // ---------- coste real de llenar ----------
+  const fmtEur = v => v.toFixed(2).replace('.', ',') + ' €';
+  // km por carretera hasta la gasolinera (ruta real si la hay; si no, estimación)
+  const tripKm = s => { const t = state.times.get(s.id); return t ? t.km : state.me ? km(state.me, s) * 1.3 : null; };
+  // Lo que pagas por los litros + el combustible gastado en ir y volver
+  function realCost(s, f = state.fuel){
+    const p = s.prices[f], k = tripKm(s);
+    const fill = state.litres * p, trip = k == null ? 0 : 2 * k * state.cons / 100 * p;
+    return { fill, trip, total: fill + trip };
+  }
+  // Referencia para el ahorro: la gasolinera más cercana (abierta, con ese carburante)
+  function nearestRef(){
+    if (!state.me) return null;
+    const f = state.fuel;
+    let best = null;
+    for (const s of state.stations){
+      if (s.prices[f] == null) continue;
+      if (state.openOnly && openState(s).open === false) continue;
+      const t = state.times.get(s.id);
+      const v = t ? t.min : km(state.me, s) * 1.3 / 55 * 60;
+      if (!best || v < best.v) best = { s, v };
+    }
+    return best && best.s;
+  }
+
   // ---------- datos ----------
   function parse(json){
     return (json.ListaEESSPrecio || []).map(raw => {
@@ -272,6 +369,8 @@ button,input,select{font:inherit;color:inherit}
         locality: title(r.localidad),
         cp: r['c.p.'],
         hours: r.horario,
+        sched: parseHours(r.horario),
+        h24: /^L(-D)?:\s*(24H|00:00-23:59)$/i.test(String(r.horario || '').trim()),
         lat: num(r.latitud),
         lng: parseFloat(String(r['longitud (wgs84)']).replace(',', '.')),
         prices,
@@ -341,7 +440,7 @@ button,input,select{font:inherit;color:inherit}
   }
   const fmtKm = d => d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(d < 10 ? 1 : 0).replace('.', ',')} km`;
   const fmtMin = m => `${state.timesApprox ? '≈ ' : ''}${Math.max(1, Math.round(m))} min`;
-  const savePrefs = () => store.set('surtidor-prefs', { fuel: state.fuel, sort: state.sort, radius: state.radius });
+  const savePrefs = () => store.set('surtidor-prefs', { fuel: state.fuel, sort: state.sort, radius: state.radius, openOnly: state.openOnly, litres: state.litres, cons: state.cons });
 
   // ---------- tiempo en coche (OSRM, servicio público de rutas sobre OpenStreetMap) ----------
   let timesSeq = 0;
@@ -391,7 +490,8 @@ button,input,select{font:inherit;color:inherit}
     const q = norm(state.q);
     const matches = s => !q || norm(`${s.brand} ${s.town} ${s.locality} ${s.address} ${s.cp}`).includes(q);
     const inRadius = s => { const t = state.times.get(s.id); return t && t.min <= state.radius; };
-    let visible = state.stations.filter(matches);
+    const isOpen = s => openState(s).open !== false;
+    let visible = state.stations.filter(s => matches(s) && (!state.openOnly || isOpen(s)));
     if (nearReady) visible = visible.filter(inRadius);
     const th = thresholds(state.stations);
 
@@ -400,7 +500,7 @@ button,input,select{font:inherit;color:inherit}
     for (const s of visible){
       const p = s.prices[f];
       if (nearReady && p == null) continue;
-      const cls = ['pin', p == null ? 'na' : '', s.id === state.selected ? 'sel' : ''].join(' ');
+      const cls = ['pin', p == null ? 'na' : '', s.id === state.selected ? 'sel' : '', isOpen(s) ? '' : 'closed'].join(' ');
       const icon = L.divIcon({
         className: '', iconSize: null,
         html: `<div class="${cls}" style="--c:${colorFor(p, th)}"><span>${p == null ? esc(s.brand.slice(0, 10)) : fmt(p)}</span></div>`,
@@ -416,9 +516,13 @@ button,input,select{font:inherit;color:inherit}
     const withPrice = visible.filter(s => s.prices[f] != null);
     withPrice.forEach(s => { s.d = state.me ? km(state.me, s) : null; s.t = state.times.get(s.id) || null; });
     const byTime = (a, b) => (a.t?.min ?? 1e9) - (b.t?.min ?? 1e9) || (a.d ?? 0) - (b.d ?? 0);
+    const ref = nearestRef();
+    withPrice.forEach(s => { s.cost = realCost(s); });
     const bySort = state.sort === 'dist' && state.me
       ? (a, b) => (a.t && b.t ? byTime(a, b) : a.d - b.d)
-      : (a, b) => a.prices[f] - b.prices[f] || byTime(a, b);
+      : state.sort === 'near' && state.me
+        ? (a, b) => a.cost.total - b.cost.total || byTime(a, b)
+        : (a, b) => a.prices[f] - b.prices[f] || byTime(a, b);
     withPrice.sort(bySort);
 
     const list = $('#list');
@@ -430,10 +534,10 @@ button,input,select{font:inherit;color:inherit}
       list.innerHTML = `<li class="empty">Ninguna gasolinera ${q ? 'que coincida con la búsqueda ' : ''}vende ${esc(FUELS[f].label)}.</li>`;
     } else {
       list.innerHTML = withPrice.map((s, i) => `
-        <li class="item${s.id === state.selected ? ' sel' : ''}" data-id="${esc(s.id)}" tabindex="0">
+        <li class="item${s.id === state.selected ? ' sel' : ''}${isOpen(s) ? '' : ' closed'}" data-id="${esc(s.id)}" tabindex="0">
           <span class="rank">${i + 1}</span>
-          <span class="name">${esc(title(s.brand))}</span>
-          <span class="price"><span class="plate" style="--c:${colorFor(s.prices[f], th)}">${fmt(s.prices[f])}<sub>€/l</sub></span>${where(s)}</span>
+          <span class="name">${esc(title(s.brand))}${isOpen(s) ? '' : '<span class="tag">Cerrada</span>'}</span>
+          <span class="price"><span class="plate" style="--c:${colorFor(s.prices[f], th)}">${fmt(s.prices[f])}<sub>€/l</sub></span>${where(s)}${saving(s, ref)}</span>
           <span class="where">${esc(s.town)} · ${esc(s.address)}</span>
         </li>`).join('');
     }
@@ -451,10 +555,11 @@ button,input,select{font:inherit;color:inherit}
     } else if (near && withPrice.length){
       const b = withPrice[0];
       best.dataset.id = b.id;
-      best.innerHTML = `<span class="k">La más barata a ${state.radius} min o menos</span>
+      best.innerHTML = `<span class="k">Lo más barato a ${state.radius} min o menos, contando el viaje</span>
         <span class="n">${esc(title(b.brand))}</span>
         <span class="plate" style="--c:${colorFor(b.prices[f], th)}">${fmt(b.prices[f])}<sub>€/l</sub></span>
-        <span class="w">${esc(b.town)} · ${fmtMin(b.t.min)} en coche (${fmtKm(b.t.km)})</span>`;
+        <span class="w">${esc(b.town)} · ${fmtMin(b.t.min)} en coche (${fmtKm(b.t.km)})</span>
+        <span class="x">${bestLine(b, ref)}</span>`;
     } else if (near){
       best.className = 'best msg';
       best.textContent = `Nada con ${FUELS[f].label} a ${state.radius} min o menos.`;
@@ -481,6 +586,27 @@ button,input,select{font:inherit;color:inherit}
     setStamp(false);
   }
 
+  function saving(s, ref){
+    if (!ref || !state.me) return '';
+    if (s.id === ref.id) return '<span class="save neg">la más cercana</span>';
+    const diff = realCost(ref).total - s.cost.total;
+    if (Math.abs(diff) < 0.05) return '<span class="save neg">igual que la cercana</span>';
+    return diff > 0
+      ? `<span class="save pos">ahorras ${fmtEur(diff)}</span>`
+      : `<span class="save neg">${fmtEur(-diff)} más</span>`;
+  }
+
+  function bestLine(b, ref){
+    const c = b.cost;
+    let txt = `Echar ${state.litres} L: <b>${fmtEur(c.fill)}</b>`;
+    if (c.trip >= 0.01) txt += ` + ${fmtEur(c.trip)} de ir y volver`;
+    if (ref && ref.id !== b.id){
+      const diff = realCost(ref).total - c.total;
+      if (diff >= 0.05) txt += `. Ahorras <b>${fmtEur(diff)}</b> frente a ${esc(title(ref.brand))}, la más cercana.`;
+    } else if (ref) txt += '. Además es la más cercana.';
+    return txt;
+  }
+
   function where(s){
     if (s.t) return `<span class="dist">${fmtMin(s.t.min)} · ${fmtKm(s.t.km)}</span>`;
     if (s.d != null) return `<span class="dist">${fmtKm(s.d)}</span>`;
@@ -498,10 +624,26 @@ button,input,select{font:inherit;color:inherit}
     return `<div class="pop">
       <h3>${esc(title(s.brand))}</h3>
       <div class="addr">${esc(s.address)}, ${esc(s.locality || s.town)}${dist}</div>
+      ${openLabel(s)}
       <table>${rows}</table>
+      ${fillBox(s)}
       ${s.hours ? `<div class="hours">Horario: ${esc(s.hours)}</div>` : ''}
       <a class="go" href="${go}" target="_blank" rel="noopener">Cómo llegar (Google Maps)</a>
     </div>`;
+  }
+
+  function fillBox(s){
+    if (s.prices[state.fuel] == null) return '';
+    const c = realCost(s);
+    let txt = `Echar ${state.litres} L de ${FUELS[state.fuel].label}: <b>${fmtEur(c.fill)}</b>`;
+    if (c.trip >= 0.01) txt += `<br>Ir y volver: ${fmtEur(c.trip)} de combustible`;
+    const ref = nearestRef();
+    if (ref && ref.id !== s.id){
+      const diff = realCost(ref).total - c.total;
+      if (diff >= 0.05) txt += `<br>Ahorras <b>${fmtEur(diff)}</b> frente a la más cercana`;
+      else if (diff <= -0.05) txt += `<br>Te cuesta ${fmtEur(-diff)} más que la más cercana`;
+    }
+    return `<div class="fill">${txt}</div>`;
   }
 
   function select(id, fly){
@@ -571,6 +713,19 @@ button,input,select{font:inherit;color:inherit}
     if (!state.me){ render(false); locate(); return; }
     render(true);
   }));
+  $('#openOnly').checked = state.openOnly;
+  $('#litres').value = state.litres;
+  $('#cons').value = state.cons;
+  $('#openOnly').addEventListener('change', e => { state.openOnly = e.target.checked; state.selected = null; savePrefs(); map.closePopup(); render(false); });
+  const numInput = (id, key, min, max) => $(id).addEventListener('change', e => {
+    const v = parseFloat(String(e.target.value).replace(',', '.'));
+    if (isFinite(v) && v >= min && v <= max){ state[key] = v; savePrefs(); render(false); }
+    else e.target.value = state[key];
+  });
+  numInput('#litres', 'litres', 5, 150);
+  numInput('#cons', 'cons', 2, 25);
+  // Las gasolineras abren y cierran: repinta cada 5 minutos si no estás mirando una
+  setInterval(() => { if (!state.selected && !document.hidden) render(false); }, 5 * 60 * 1000);
   $('#best').addEventListener('click', e => { const id = e.currentTarget.dataset.id; if (id && !e.currentTarget.classList.contains('msg')) select(id, true); });
   const pick = el => { const li = el.closest('.item'); if (li) select(li.dataset.id, true); };
   $('#list').addEventListener('click', e => pick(e.target));
