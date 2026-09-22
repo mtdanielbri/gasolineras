@@ -584,18 +584,21 @@ button,input,select{font:inherit;color:inherit}
     $('#radius').hidden = !near;
 
     const q = norm(state.q);
+    const searching = q.length > 0;
     const matches = s => !q || norm(`${s.brand} ${s.town} ${s.locality} ${s.address} ${s.cp}`).includes(q);
     const inRadius = s => { const t = state.times.get(s.id); return t && t.min <= state.radius; };
     const isOpen = s => openState(s).open !== false;
     let visible = state.stations.filter(s => matches(s) && (!state.openOnly || isOpen(s)));
-    if (nearReady) visible = visible.filter(inRadius);
+    // Al buscar se enseña todo lo que coincide, esté a los minutos que esté
+    const limited = nearReady && !searching;
+    if (limited) visible = visible.filter(inRadius);
     const th = thresholds(state.stations);
 
     // marcadores
     layer.clearLayers(); markers.clear();
     for (const s of visible){
       const p = s.prices[f];
-      if (nearReady && p == null) continue;
+      if (limited && p == null) continue;
       const cls = ['pin', p == null ? 'na' : '', s.id === state.selected ? 'sel' : '', isOpen(s) ? '' : 'closed'].join(' ');
       const icon = L.divIcon({
         className: '', iconSize: null,
@@ -612,9 +615,11 @@ button,input,select{font:inherit;color:inherit}
     const withPrice = visible.filter(s => s.prices[f] != null);
     withPrice.forEach(s => { s.d = orig ? km(orig, s) : null; s.t = state.times.get(s.id) || null; });
     const byTime = (a, b) => (a.t?.min ?? 1e9) - (b.t?.min ?? 1e9) || (a.d ?? 0) - (b.d ?? 0);
-    const ref = nearestRef();
+    const ref = searching ? null : nearestRef();  // buscando un pueblo, el ahorro frente a la de casa no dice nada
     withPrice.forEach(s => { s.cost = realCost(s); });
-    const bySort = state.sort === 'dist' && orig
+    const bySort = searching
+      ? (a, b) => a.prices[f] - b.prices[f] || byTime(a, b)
+      : state.sort === 'dist' && orig
       ? (a, b) => (a.t && b.t ? byTime(a, b) : a.d - b.d)
       : state.sort === 'near' && orig
         ? (a, b) => a.cost.total - b.cost.total || byTime(a, b)
@@ -624,10 +629,12 @@ button,input,select{font:inherit;color:inherit}
     const list = $('#list');
     if (!state.stations.length){
       list.innerHTML = '<li class="empty">Descargando precios…</li>';
-    } else if (nearReady && !withPrice.length){
-      list.innerHTML = `<li class="empty">No hay ninguna gasolinera con ${esc(FUELS[f].label)} a ${state.radius} min o menos${q ? ' que coincida con la búsqueda' : ''}. Prueba con más minutos.</li>`;
+    } else if (searching && !withPrice.length){
+      list.innerHTML = `<li class="empty">Nada con ${esc(FUELS[f].label)} en «${esc(state.q)}». Prueba con otro nombre${state.openOnly ? ', o desmarca «Solo abiertas ahora»' : ''}.</li>`;
+    } else if (limited && !withPrice.length){
+      list.innerHTML = `<li class="empty">No hay ninguna gasolinera con ${esc(FUELS[f].label)} a ${state.radius} min o menos. Prueba con más minutos.</li>`;
     } else if (!withPrice.length){
-      list.innerHTML = `<li class="empty">Ninguna gasolinera ${q ? 'que coincida con la búsqueda ' : ''}vende ${esc(FUELS[f].label)}.</li>`;
+      list.innerHTML = `<li class="empty">Ninguna gasolinera vende ${esc(FUELS[f].label)}.</li>`;
     } else {
       list.innerHTML = withPrice.map((s, i) => `
         <li class="item${s.id === state.selected ? ' sel' : ''}${isOpen(s) ? '' : ' closed'}" data-id="${esc(s.id)}" tabindex="0">
@@ -640,15 +647,15 @@ button,input,select{font:inherit;color:inherit}
 
     // recuadro "la más barata cerca"
     const best = $('#best');
-    best.hidden = !near || !state.stations.length;
+    best.hidden = !near || searching || !state.stations.length;
     best.className = 'best';
     if (near && !orig){
       best.className = 'best msg';
       best.innerHTML = 'Escribe un pueblo arriba, o pulsa <b>Mi ubicación</b>, para ver la más barata que pilla cerca.';
-    } else if (near && !nearReady){
+    } else if (near && !limited){
       best.className = 'best msg';
       best.textContent = 'Calculando el tiempo en coche hasta cada gasolinera…';
-    } else if (near && withPrice.length){
+    } else if (near && withPrice.length && withPrice[0].t){
       const b = withPrice[0];
       best.dataset.id = b.id;
       best.innerHTML = `<span class="k">Lo más barato a ${state.radius} min o menos, contando el viaje</span>
@@ -664,13 +671,13 @@ button,input,select{font:inherit;color:inherit}
     const cheapest = withPrice.length ? Math.min(...withPrice.map(s => s.prices[f])) : null;
     const avg = withPrice.length ? withPrice.reduce((t, s) => t + s.prices[f], 0) / withPrice.length : null;
     $('#summary').textContent = withPrice.length
-      ? `${withPrice.length} con ${FUELS[f].label}${nearReady ? ` a ${state.radius} min o menos` : ''} · desde ${fmt(cheapest)} €/l · media ${fmt(avg)} €/l${state.timesApprox && orig ? ' · tiempos aproximados' : ''}`
+      ? `${withPrice.length} con ${FUELS[f].label}${searching ? ` en «${state.q}»` : limited ? ` a ${state.radius} min o menos` : ''} · desde ${fmt(cheapest)} €/l · media ${fmt(avg)} €/l${state.timesApprox && orig ? ' · tiempos aproximados' : ''}`
       : '';
 
     if (fit && !state.selected){
       const base = withPrice.length ? withPrice : visible;
       const pts = base.map(s => [s.lat, s.lng]);
-      if (orig && state.sort !== 'price'){
+      if (orig && !searching && state.sort !== 'price'){
         if (state.sort === 'dist') pts.splice(8);
         pts.push([orig.lat, orig.lng]);
       }
@@ -693,8 +700,8 @@ button,input,select{font:inherit;color:inherit}
 
     const n = withPrice.length;
     $('#sheetTitle').innerHTML = !state.stations.length ? 'Cargando…'
-      : n ? `${n} gasolinera${n === 1 ? '' : 's'} <span>· ${esc(FUELS[f].label)}${nearReady ? `, a ${state.radius} min` : ''}</span>`
-          : `Ninguna con ${esc(FUELS[f].label)}`;
+      : n ? `${n} gasolinera${n === 1 ? '' : 's'} <span>· ${searching ? `«${esc(state.q)}»` : esc(FUELS[f].label) + (limited ? `, a ${state.radius} min` : '')}</span>`
+          : searching ? `Nada en «${esc(state.q)}»` : `Ninguna con ${esc(FUELS[f].label)}`;
 
     setStamp(false);
   }
@@ -839,7 +846,11 @@ button,input,select{font:inherit;color:inherit}
   }));
   $('#refresh').addEventListener('click', () => load());
   $('#locate').addEventListener('click', locate);
-  $('#q').addEventListener('input', e => { state.q = e.target.value; state.selected = null; render(true); });
+  $('#q').addEventListener('input', e => {
+    state.q = e.target.value; state.selected = null;
+    render(true);
+    map.closePopup();
+  });
   // Enter: si lo escrito es un pueblo, centra la búsqueda ahí
   $('#q').addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
