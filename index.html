@@ -357,6 +357,7 @@ button,input,select{font:inherit;color:inherit}
     ['51','Ceuta',35.891,-5.322],
     ['52','Melilla',35.284,-2.942]
   ].map(([id, name, lat, lng]) => ({ id, name, lat, lng }));
+  const VERSION = '20260923-0004';        // se compara con version.txt para no quedarte con una copia vieja
   const PAGE = 50;                 // filas de lista por tanda: pintar 600 de golpe va lento
   const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
 
@@ -781,7 +782,7 @@ button,input,select{font:inherit;color:inherit}
     markers.clear();
     for (const s of visible){
       const p = s.prices[f];
-      if (limited && p == null) continue;
+      if (p == null) continue;    // sin ese carburante no pinta nada en el mapa
       const cls = ['pin', p == null ? 'na' : '', s.id === state.selected ? 'sel' : '', isOpen(s) ? '' : 'closed'].join(' ');
       const icon = L.divIcon({
         className: '', iconSize: null,
@@ -1119,9 +1120,24 @@ button,input,select{font:inherit;color:inherit}
   });
   map.on('popupclose', () => { state.selected = null; document.querySelectorAll('.sel').forEach(el => el.classList.remove('sel')); });
 
+  // El navegador guarda la página en caché; así se entera de que hay una versión nueva
+  async function checkVersion(){
+    if (sessionStorage.getItem('surtidor-reload')) return;   // solo un intento por sesión
+    try {
+      const r = await fetch('version.txt?t=' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) return;
+      const v = (await r.text()).trim();
+      if (!v || v === VERSION) return;
+      sessionStorage.setItem('surtidor-reload', v);
+      toast('Hay una versión nueva. Recargando…');
+      await fetch('index.html', { cache: 'reload' }).catch(() => {});
+      setTimeout(() => location.reload(), 1200);
+    } catch {}
+  }
+
   // Actualización automática: al abrir, cada 30 min, y al volver a la pestaña
   let last = 0;
-  const autoLoad = () => { last = Date.now(); refreshAll(); };
+  const autoLoad = () => { last = Date.now(); refreshAll(); checkVersion(); };
   setInterval(() => { if (!document.hidden) autoLoad(); }, AUTO_MS);
   document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - last > AUTO_MS) autoLoad(); });
 
@@ -1138,6 +1154,7 @@ button,input,select{font:inherit;color:inherit}
   }
   if (anyCache){ rebuild(true); setStamp(true); } else render(false);
   (async () => { for (const id of state.provs) await loadProv(id, { refresh: true }); })();
+  checkVersion();
   last = Date.now();
 
   // Si ya diste permiso de ubicación antes, te localiza sola al abrir
