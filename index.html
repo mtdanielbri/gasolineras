@@ -397,7 +397,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     ['51','Ceuta',35.891,-5.322],
     ['52','Melilla',35.284,-2.942]
   ].map(([id, name, lat, lng]) => ({ id, name, lat, lng }));
-  const VERSION = '20260923-0011';        // se compara con version.txt para no quedarte con una copia vieja
+  const VERSION = '20260923-0018';        // se compara con version.txt para no quedarte con una copia vieja
   const PAGE = 50;                 // filas de lista por tanda: pintar 600 de golpe va lento
   const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
 
@@ -439,6 +439,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     fuel: FUELS[saved.fuel] ? saved.fuel : 'g95',
     sort: ['near', 'price', 'dist'].includes(saved.sort) ? saved.sort : 'near',
     radius: [5, 10, 15].includes(saved.radius) ? saved.radius : 10,
+    todas: saved.todas ?? true,        // por defecto, las 52 provincias
     provs: Array.isArray(saved.provs) && saved.provs.length ? saved.provs : [saved.prov || HOME],
     openOnly: saved.openOnly ?? true,
     // Por carburante: { l: litros, c: consumo }. Vacío = valor por defecto
@@ -453,6 +454,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     stations: [],
     fecha: null,
     loadingProv: null,
+    restantes: 0,
     me: null,          // dónde estás (GPS)
     place: null,       // pueblo buscado: { name, lat, lng }
     selected: null,
@@ -653,11 +655,12 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
   }
 
   let loading = 0;
-  async function loadProv(id, { refresh = false, quiet = true } = {}){
+  async function loadProv(id, { refresh = false, quiet = true, silent = false } = {}){
     if (state.loaded.has(id) && !refresh) return true;
     const btn = $('#refresh');
     loading++; btn.disabled = true; btn.classList.add('spin');
-    state.loadingProv = provName(id); setStamp(false);
+    if (!silent) state.loadingProv = provName(id);
+    setStamp(false);
     try {
       const res = await fetch(API_PROV(id), { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -665,9 +668,9 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
       if (!json.ListaEESSPrecio) throw new Error('respuesta vacía');
       const changed = json.Fecha !== state.loaded.get(id)?.fecha;
       state.loaded.set(id, { list: parse(json), fecha: json.Fecha || null });
-      store.set(CACHE_KEY(id), json);   // si no cabe, se ignora sin romper nada
+      if (!silent) store.set(CACHE_KEY(id), json);   // solo se guarda tu zona: España entera no cabe
       savePrefs();
-      rebuild(true);
+      if (silent) setStamp(false); else rebuild(true);
       if (!quiet) toast(changed ? 'Precios actualizados' : 'Ya tenías los precios más recientes');
       return true;
     } catch (e) {
@@ -706,20 +709,62 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
   // Pinta las provincias cargadas y el desplegable para añadir otra
   function zonas(){
     const box = $('#zonas');
+    if (state.todas){
+      box.innerHTML = `<span class="z">Toda España <button type="button" id="soloZona" title="Quedarte solo con tu zona" aria-label="Quedarte solo con tu zona">×</button></span>` +
+        `<span>${state.restantes ? `cargando… faltan ${state.restantes} provincias` : `${state.loaded.size} provincias cargadas`}</span>`;
+      $('#soloZona').addEventListener('click', () => {
+        state.todas = false;
+        const cerca = origin() ? provsNear(origin()) : [HOME];
+        for (const id of [...state.loaded.keys()]) if (!cerca.includes(id)) state.loaded.delete(id);
+        savePrefs();
+        state.times = new Map(); state.timesDone = false;
+        rebuild(true);
+        if (origin()) computeTimes();
+      });
+      return;
+    }
     const ids = [...state.loaded.keys()];
     const many = ids.length > 1;
     box.innerHTML = ids.map(id =>
       `<span class="z">${esc(provName(id))}${many ? `<button type="button" data-drop="${id}" title="Quitar ${esc(provName(id))}" aria-label="Quitar ${esc(provName(id))}">×</button>` : ''}</span>`).join('') +
       `<select id="addProv" aria-label="Añadir provincia"><option value="">+ Añadir provincia…</option>` +
+      `<option value="*">Toda España</option>` +
       PROVS.filter(pr => !state.loaded.has(pr.id)).map(pr => `<option value="${pr.id}">${esc(pr.name)}</option>`).join('') +
       `</select>`;
     box.querySelectorAll('[data-drop]').forEach(b => b.addEventListener('click', () => dropProv(b.dataset.drop)));
     $('#addProv').addEventListener('change', async e => {
       const id = e.target.value;
       if (!id) return;
+      if (id === '*'){ state.todas = true; savePrefs(); render(false); return loadTodas(); }
       await loadProv(id);
       if (origin()){ state.times = new Map(); state.timesDone = false; computeTimes(); }
     });
+  }
+
+  // Descarga el resto de provincias sin bloquear: primero tu zona, luego España entera
+  let cargandoTodas = false;
+  async function loadTodas(){
+    if (cargandoTodas) return;
+    cargandoTodas = true;
+    try {
+      const pend = PROVS.map(pr => pr.id).filter(id => !state.loaded.has(id));
+      let hechas = 0;
+      const total = pend.length;
+      const tanda = async () => {
+        while (pend.length){
+          const id = pend.shift();
+          state.restantes = total - hechas;
+          await loadProv(id, { silent: true });
+          hechas++;
+        }
+      };
+      await Promise.all([tanda(), tanda(), tanda(), tanda()]);   // 4 descargas a la vez
+      state.restantes = 0;
+      rebuild(false);
+    } finally {
+      cargandoTodas = false;
+      setStamp(false);
+    }
   }
 
   // Listado de municipios de España (1 MB): solo se pide la primera vez que buscas
@@ -744,9 +789,10 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
         ? `Precios de las <b>${esc(state.fecha.replace(/^\S+\s/, '').replace(/:\d\d$/, ''))}</b> · ${withFuel} con ${FUELS[state.fuel].label}`
         : `Datos del Ministerio: <b>${esc(state.fecha.replace(/:\d\d$/, ''))}</b> · ${n} gasolineras, ${withFuel} con ${FUELS[state.fuel].label}`
       : 'Sin datos todavía';
-    const zonas = [...state.loaded.keys()].map(provName).join(', ');
+    const zonas = state.todas ? `Toda España (${state.loaded.size}/52)` : [...state.loaded.keys()].map(provName).join(', ');
     if (zonas) html += small ? '' : ` · ${esc(zonas)}`;
     if (state.loadingProv) html += ` · <b>Cargando ${esc(state.loadingProv)}…</b>`;
+    else if (state.restantes) html += ` · <b>Cargando España… faltan ${state.restantes}</b>`;
     if (fromCache && !error) html += ' · (copia guardada, comprobando…)';
     if (error) html += ` · <span class="err">${esc(error)}</span>`;
     el.innerHTML = html;
@@ -770,7 +816,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
   }
   const fmtKm = d => d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(d < 10 ? 1 : 0).replace('.', ',')} km`;
   const fmtMin = m => `${state.timesApprox ? '≈ ' : ''}${Math.max(1, Math.round(m))} min`;
-  const savePrefs = () => store.set('surtidor-prefs', { fuel: state.fuel, sort: state.sort, radius: state.radius, openOnly: state.openOnly, cars: state.cars, provs: [...state.loaded.keys()] });
+  const savePrefs = () => store.set('surtidor-prefs', { fuel: state.fuel, sort: state.sort, radius: state.radius, openOnly: state.openOnly, cars: state.cars, todas: state.todas, provs: [...state.loaded.keys()] });
 
   // ---------- tiempo en coche (OSRM, servicio público de rutas sobre OpenStreetMap) ----------
   let timesSeq = 0;
@@ -807,6 +853,49 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     render(state.sort === 'near');
   }
 
+  // Marcadores: solo los del trozo de mapa que se está viendo. Con 11.000 gasolineras,
+  // crearlas todas en cada cambio va lento, y las de fuera de pantalla no se ven igual.
+  let enMapa = [];
+  const MAX_PINTADOS = 1200;
+  function paintMarkers(){
+    const f = state.fuel;
+    let lista = enMapa;
+    if (lista.length > MAX_PINTADOS){
+      const b = map.getBounds().pad(0.25);
+      lista = lista.filter(s => b.contains([s.lat, s.lng]));
+      if (lista.length > MAX_PINTADOS){
+        // Aun así son demasiadas: se quedan las más baratas, que son las que importan
+        lista = lista.slice().sort((a, b2) => a.prices[f] - b2.prices[f]).slice(0, MAX_PINTADOS);
+      }
+    }
+    const nuevos = [];
+    markers.clear();
+    for (const s of lista){
+      const p = s.prices[f];
+      const abierta = openState(s).open !== false;
+      const cls = ['pin', s.id === state.selected ? 'sel' : '', abierta ? '' : 'closed'].join(' ');
+      const icon = L.divIcon({
+        className: '', iconSize: null,
+        html: `<div class="${cls}" style="--c:${colorFor(p, lastTh)}"><span>${fmt(p)}</span></div>`,
+      });
+      const m = L.marker([s.lat, s.lng], { icon, precio: p, zIndexOffset: Math.round((3 - p) * 1000), title: s.brand, keyboard: true })
+        .bindPopup(() => popup(s), { maxWidth: 280 })
+        .on('click', () => select(s.id, false));
+      nuevos.push(m);
+      markers.set(s.id, m);
+    }
+    layer.clearLayers();
+    layer.addLayers(nuevos);   // de golpe: mucho más rápido que uno a uno
+  }
+
+  // Al mover o hacer zoom, repinta los de la nueva zona (sin tocar la lista)
+  let panTimer = null;
+  map.on('moveend zoomend', () => {
+    if (enMapa.length <= MAX_PINTADOS) return;
+    clearTimeout(panTimer);
+    panTimer = setTimeout(paintMarkers, 250);
+  });
+
   // ---------- pintar ----------
   function render(fit){
     const f = state.fuel;
@@ -833,24 +922,8 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
 
     // marcadores
     lastTh = th;
-    const nuevos = [];
-    markers.clear();
-    for (const s of visible){
-      const p = s.prices[f];
-      if (p == null) continue;    // sin ese carburante no pinta nada en el mapa
-      const cls = ['pin', p == null ? 'na' : '', s.id === state.selected ? 'sel' : '', isOpen(s) ? '' : 'closed'].join(' ');
-      const icon = L.divIcon({
-        className: '', iconSize: null,
-        html: `<div class="${cls}" style="--c:${colorFor(p, th)}"><span>${p == null ? esc(s.brand.slice(0, 10)) : fmt(p)}</span></div>`,
-      });
-      const m = L.marker([s.lat, s.lng], { icon, precio: p, zIndexOffset: p == null ? -1000 : Math.round((3 - p) * 1000), title: s.brand, keyboard: true })
-        .bindPopup(() => popup(s), { maxWidth: 280 })
-        .on('click', () => select(s.id, false));
-      nuevos.push(m);
-      markers.set(s.id, m);
-    }
-    layer.clearLayers();
-    layer.addLayers(nuevos);   // de golpe: mucho más rápido que uno a uno
+    enMapa = visible.filter(s => s.prices[f] != null);
+    paintMarkers();
 
     // lista
     const withPrice = visible.filter(s => s.prices[f] != null);
@@ -920,7 +993,9 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
       ? `${withPrice.length} con ${FUELS[f].label}${searching ? ` en «${state.q}»` : limited ? ` a ${state.radius} min o menos` : ''} · desde ${fmt(cheapest)} €/l · media ${fmt(avg)} €/l${state.timesApprox && orig ? ' · tiempos aproximados' : ''}`
       : '';
 
-    if (fit && !state.selected){
+    // Con toda España cargada no tiene sentido encuadrarlo todo (saldrían Canarias y Melilla):
+    // solo se reencuadra cuando buscas, cuando hay un punto de partida, o cuando son pocas
+    if (fit && !state.selected && (searching || orig || withPrice.length <= 400)){
       const base = withPrice.length ? withPrice : visible;
       const pts = base.map(s => [s.lat, s.lng]);
       if (orig && !searching && state.sort !== 'price'){
@@ -1229,7 +1304,10 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     }
   }
   if (anyCache){ rebuild(true); setStamp(true); } else render(false);
-  (async () => { for (const id of state.provs) await loadProv(id, { refresh: true }); })();
+  (async () => {
+    for (const id of state.provs) await loadProv(id, { refresh: true });
+    if (state.todas) loadTodas();     // el resto de España, de fondo
+  })();
   checkVersion();
   last = Date.now();
 
