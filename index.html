@@ -173,6 +173,27 @@ button,input,select{font:inherit;color:inherit}
 .pop .hours{font-size:12px;color:var(--muted);margin-bottom:10px}
 .pop a.go{display:flex;justify-content:center;align-items:center;gap:6px;background:var(--accent);color:var(--accent-ink);text-decoration:none;font-weight:700;padding:8px;border-radius:8px}
 
+.linkish{border:0;background:transparent;color:var(--focus);font:inherit;font-weight:600;cursor:pointer;padding:0;text-decoration:underline;text-underline-offset:2px}
+dialog{border:0;border-radius:14px;padding:0;background:var(--panel);color:var(--ink);box-shadow:var(--shadow);max-width:min(520px,calc(100% - 24px));width:100%}
+dialog::backdrop{background:rgba(12,16,18,.55)}
+.set{padding:20px 20px calc(20px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:12px}
+.set h2{margin:0;font:700 24px/1 "Barlow Condensed",sans-serif;text-transform:uppercase;letter-spacing:.02em}
+.set .hint{margin:0;font-size:13px;color:var(--muted)}
+.set .hint b{color:var(--ink)}
+.settbl{width:100%;border-collapse:collapse}
+.settbl th{font:600 12px/1.2 Barlow,sans-serif;color:var(--muted);text-align:right;padding:0 0 6px;font-weight:600}
+.settbl th:first-child{text-align:left}
+.settbl td{padding:5px 0;border-top:1px solid var(--line);text-align:right}
+.settbl td:first-child{text-align:left;font-weight:600}
+.settbl input{width:82px;padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:var(--bg);text-align:right;font-variant-numeric:tabular-nums}
+.setrow{display:flex;gap:10px;justify-content:flex-end;margin-top:4px}
+.btn2{border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:9px 16px;border-radius:9px;font-weight:600;cursor:pointer}
+.btn2.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn2:hover{filter:brightness(.97)}
+@media (max-width:760px){
+  dialog{margin:auto 12px;max-height:88vh;overflow:auto}
+  .settbl input{width:72px}
+}
 .toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--asphalt);color:#fff;padding:9px 14px;border-radius:9px;box-shadow:var(--shadow);z-index:2000;font-weight:500;max-width:calc(100% - 32px)}
 
 /* ---------- móvil: mapa a pantalla completa y lista en panel deslizante ---------- */
@@ -233,6 +254,9 @@ button,input,select{font:inherit;color:inherit}
     <button type="button" data-fuel="glp">GLP</button>
   </nav>
   <div class="actions">
+    <button type="button" class="btn" id="openSet" title="Ajustes: consumo de tu coche">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 14a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1v.3a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-2.8-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H3a2 2 0 1 1 0-4h.2A1.6 1.6 0 0 0 4.3 6l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V2a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0 1.1 2.7h.3a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.1 1.2z"/></svg><span class="lbl">Ajustes</span>
+    </button>
     <button type="button" class="btn" id="locate" title="Centrar en mi ubicación">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg><span class="lbl">Mi ubicación</span>
     </button>
@@ -280,7 +304,7 @@ button,input,select{font:inherit;color:inherit}
       </div>
       <div class="opts">
         <label class="chk"><input type="checkbox" id="openOnly"> Solo abiertas ahora</label>
-        <span class="car">Echo <input id="litres" type="number" min="5" max="150" step="1" inputmode="numeric" aria-label="Litros a repostar"> L · gasta <input id="cons" type="number" min="2" max="25" step="0.1" inputmode="decimal" aria-label="Consumo en litros cada 100 km"> L/100 km</span>
+        <button type="button" class="linkish" id="openSet2">Mi coche: <span id="carNow"></span></button>
       </div>
       </div>
       <div class="best" id="best" hidden></div>
@@ -291,6 +315,22 @@ button,input,select{font:inherit;color:inherit}
   </aside>
   <div id="map" aria-label="Mapa de gasolineras"></div>
 </div>
+
+<dialog id="settings" aria-label="Ajustes">
+  <form method="dialog" class="set" id="setForm">
+    <h2>Ajustes de tu coche</h2>
+    <p class="hint">Estos datos son los que se usan para calcular lo que cuesta llenar y cuánto ahorras yendo a una gasolinera u otra. Puedes poner un consumo distinto para cada carburante: por ejemplo, un coche de GLP gasta más litros de gas que de gasolina.</p>
+    <p class="hint">Deja en blanco lo que no sepas y se usan los valores por defecto: <b>50 L</b> y <b>6 L/100 km</b>.</p>
+    <table class="settbl">
+      <thead><tr><th>Carburante</th><th>Litros que echas</th><th>Consumo (L/100 km)</th></tr></thead>
+      <tbody id="setRows"></tbody>
+    </table>
+    <div class="setrow">
+      <button type="button" class="btn2" id="resetSet">Restablecer todo</button>
+      <button type="submit" class="btn2 primary" value="ok">Guardar</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.markercluster/1.5.3/leaflet.markercluster.min.js"></script>
@@ -357,7 +397,7 @@ button,input,select{font:inherit;color:inherit}
     ['51','Ceuta',35.891,-5.322],
     ['52','Melilla',35.284,-2.942]
   ].map(([id, name, lat, lng]) => ({ id, name, lat, lng }));
-  const VERSION = '20260923-0004';        // se compara con version.txt para no quedarte con una copia vieja
+  const VERSION = '20260923-0011';        // se compara con version.txt para no quedarte con una copia vieja
   const PAGE = 50;                 // filas de lista por tanda: pintar 600 de golpe va lento
   const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
 
@@ -382,15 +422,27 @@ button,input,select{font:inherit;color:inherit}
     .replace(/\s(De|Del|La|Las|Lo|Los|El|Y|E|En|A|Al)(?=\s)/g, m => m.toLowerCase());
   const fmt = p => p.toFixed(3).replace('.', ',');
 
+  const DEF_L = 50, DEF_C = 6;     // lo que se usa mientras no pongas los tuyos
   const saved = store.get('surtidor-prefs') || {};
+  // Recoge lo que hubiera guardado de la versión anterior (un solo valor para todo)
+  function sanitizeCars(cars, old){
+    const out = {};
+    for (const f in FUELS){
+      const c = (cars && cars[f]) || {};
+      const l = +c.l > 0 ? +c.l : (+old?.litres > 0 ? +old.litres : null);
+      const co = +c.c > 0 ? +c.c : (+old?.cons > 0 ? +old.cons : null);
+      out[f] = { l, c: co };
+    }
+    return out;
+  }
   const state = {
     fuel: FUELS[saved.fuel] ? saved.fuel : 'g95',
     sort: ['near', 'price', 'dist'].includes(saved.sort) ? saved.sort : 'near',
     radius: [5, 10, 15].includes(saved.radius) ? saved.radius : 10,
     provs: Array.isArray(saved.provs) && saved.provs.length ? saved.provs : [saved.prov || HOME],
     openOnly: saved.openOnly ?? true,
-    litres: saved.litres > 0 ? saved.litres : 50,
-    cons: saved.cons > 0 ? saved.cons : 6,
+    // Por carburante: { l: litros, c: consumo }. Vacío = valor por defecto
+    cars: sanitizeCars(saved.cars, saved),
     times: new Map(),     // id -> { min, km } en coche desde mi ubicación
     timesApprox: false,
     timesPending: false,
@@ -536,9 +588,12 @@ button,input,select{font:inherit;color:inherit}
   // km por carretera hasta la gasolinera (ruta real si la hay; si no, estimación)
   const tripKm = s => { const t = state.times.get(s.id); const o = origin(); return t ? t.km : o ? km(o, s) * 1.3 : null; };
   // Lo que pagas por los litros + el combustible gastado en ir y volver
+  const litresOf = (f = state.fuel) => state.cars[f]?.l || DEF_L;
+  const consOf = (f = state.fuel) => state.cars[f]?.c || DEF_C;
+
   function realCost(s, f = state.fuel){
     const p = s.prices[f], k = tripKm(s);
-    const fill = state.litres * p, trip = k == null ? 0 : 2 * k * state.cons / 100 * p;
+    const fill = litresOf(f) * p, trip = k == null ? 0 : 2 * k * consOf(f) / 100 * p;
     return { fill, trip, total: fill + trip };
   }
   // Referencia para el ahorro: la gasolinera más cercana (abierta, con ese carburante)
@@ -715,7 +770,7 @@ button,input,select{font:inherit;color:inherit}
   }
   const fmtKm = d => d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(d < 10 ? 1 : 0).replace('.', ',')} km`;
   const fmtMin = m => `${state.timesApprox ? '≈ ' : ''}${Math.max(1, Math.round(m))} min`;
-  const savePrefs = () => store.set('surtidor-prefs', { fuel: state.fuel, sort: state.sort, radius: state.radius, openOnly: state.openOnly, litres: state.litres, cons: state.cons, provs: [...state.loaded.keys()] });
+  const savePrefs = () => store.set('surtidor-prefs', { fuel: state.fuel, sort: state.sort, radius: state.radius, openOnly: state.openOnly, cars: state.cars, provs: [...state.loaded.keys()] });
 
   // ---------- tiempo en coche (OSRM, servicio público de rutas sobre OpenStreetMap) ----------
   let timesSeq = 0;
@@ -889,6 +944,8 @@ button,input,select{font:inherit;color:inherit}
     }
     suggest();
     zonas();
+    const propio = state.cars[f]?.l || state.cars[f]?.c;
+    $('#carNow').textContent = `${litresOf()} L · ${String(consOf()).replace('.', ',')} L/100 km${propio ? '' : ' (por defecto)'}`;
 
     const n = withPrice.length;
     $('#sheetTitle').innerHTML = !state.stations.length ? 'Cargando…'
@@ -942,7 +999,7 @@ button,input,select{font:inherit;color:inherit}
 
   function bestLine(b, ref){
     const c = b.cost;
-    let txt = `Echar ${state.litres} L: <b>${fmtEur(c.fill)}</b>`;
+    let txt = `Echar ${litresOf()} L: <b>${fmtEur(c.fill)}</b>`;
     if (c.trip >= 0.01) txt += ` + ${fmtEur(c.trip)} de ir y volver`;
     if (ref && ref.id !== b.id){
       const diff = realCost(ref).total - c.total;
@@ -980,7 +1037,7 @@ button,input,select{font:inherit;color:inherit}
   function fillBox(s){
     if (s.prices[state.fuel] == null) return '';
     const c = realCost(s);
-    let txt = `Echar ${state.litres} L de ${FUELS[state.fuel].label}: <b>${fmtEur(c.fill)}</b>`;
+    let txt = `Echar ${litresOf()} L de ${FUELS[state.fuel].label}: <b>${fmtEur(c.fill)}</b>`;
     if (c.trip >= 0.01) txt += `<br>Ir y volver: ${fmtEur(c.trip)} de combustible`;
     const ref = nearestRef();
     if (ref && ref.id !== s.id){
@@ -1086,16 +1143,35 @@ button,input,select{font:inherit;color:inherit}
     render(true);
   }));
   $('#openOnly').checked = state.openOnly;
-  $('#litres').value = state.litres;
-  $('#cons').value = state.cons;
   $('#openOnly').addEventListener('change', e => { state.openOnly = e.target.checked; state.selected = null; state.limit = PAGE; savePrefs(); map.closePopup(); render(false); });
-  const numInput = (id, key, min, max) => $(id).addEventListener('change', e => {
-    const v = parseFloat(String(e.target.value).replace(',', '.'));
-    if (isFinite(v) && v >= min && v <= max){ state[key] = v; savePrefs(); render(false); }
-    else e.target.value = state[key];
+
+  // ---------- ventana de ajustes ----------
+  const dlg = $('#settings');
+  function fillSettings(){
+    $('#setRows').innerHTML = Object.entries(FUELS).map(([k, f]) => `
+      <tr>
+        <td>${f.label}</td>
+        <td><input type="number" id="l_${k}" min="5" max="200" step="1" inputmode="numeric" placeholder="${DEF_L}" value="${state.cars[k].l ?? ''}" aria-label="Litros de ${f.label}"></td>
+        <td><input type="number" id="c_${k}" min="1" max="40" step="0.1" inputmode="decimal" placeholder="${DEF_C}" value="${state.cars[k].c ?? ''}" aria-label="Consumo con ${f.label}"></td>
+      </tr>`).join('');
+  }
+  const openSettings = () => { fillSettings(); dlg.showModal(); };
+  $('#openSet').addEventListener('click', openSettings);
+  $('#openSet2').addEventListener('click', openSettings);
+  $('#resetSet').addEventListener('click', () => {
+    for (const k in FUELS) state.cars[k] = { l: null, c: null };
+    fillSettings();
   });
-  numInput('#litres', 'litres', 5, 150);
-  numInput('#cons', 'cons', 2, 25);
+  $('#setForm').addEventListener('submit', () => {
+    const val = (id, min, max) => {
+      const v = parseFloat(String($(id).value).replace(',', '.'));
+      return isFinite(v) && v >= min && v <= max ? v : null;
+    };
+    for (const k in FUELS) state.cars[k] = { l: val(`#l_${k}`, 5, 200), c: val(`#c_${k}`, 1, 40) };
+    savePrefs();
+    render(false);
+    toast('Ajustes guardados');
+  });
   // Las gasolineras abren y cierran: repinta cada 5 minutos si no estás mirando una
   setInterval(() => { if (!state.selected && !document.hidden) render(false); }, 5 * 60 * 1000);
   $('#best').addEventListener('click', e => { const id = e.currentTarget.dataset.id; if (id && !e.currentTarget.classList.contains('msg')) select(id, true); });
