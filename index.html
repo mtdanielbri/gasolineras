@@ -408,7 +408,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     ['51','Ceuta',35.891,-5.322],
     ['52','Melilla',35.284,-2.942]
   ].map(([id, name, lat, lng]) => ({ id, name, lat, lng }));
-  const VERSION = '20260923-1051';        // se compara con version.txt para no quedarte con una copia vieja
+  const VERSION = '20260923-1056';        // se compara con version.txt para no quedarte con una copia vieja
   const PAGE = 50;                 // filas de lista por tanda: pintar 600 de golpe va lento
   const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
 
@@ -1110,8 +1110,8 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
       const d2 = segunda.cost.total - c.total;
       const quien = `${esc(title(segunda.brand))}${segunda.t ? `, a ${fmtMin(segunda.t.min)}` : ''}`;
       txt += d2 >= 0.05
-        ? `<br>Y <b>${fmtEur(d2)}</b> frente a la segunda, ${quien}.`
-        : `<br>La segunda, ${quien}, te sale prácticamente igual.`;
+        ? `<br>Y <b>${fmtEur(d2)}</b> frente a la segunda más barata, ${quien}.`
+        : `<br>La segunda más barata, ${quien}, te sale prácticamente igual.`;
     }
     return txt;
   }
