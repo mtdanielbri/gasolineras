@@ -408,7 +408,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     ['51','Ceuta',35.891,-5.322],
     ['52','Melilla',35.284,-2.942]
   ].map(([id, name, lat, lng]) => ({ id, name, lat, lng }));
-  const VERSION = '20260923-1048';        // se compara con version.txt para no quedarte con una copia vieja
+  const VERSION = '20260923-1051';        // se compara con version.txt para no quedarte con una copia vieja
   const PAGE = 50;                 // filas de lista por tanda: pintar 600 de golpe va lento
   const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
 
@@ -1008,7 +1008,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
         <span class="n">${esc(title(b.brand))}</span>
         <span class="plate" style="--c:${colorFor(b.prices[f], th)}">${fmt(b.prices[f])}<sub>€/l</sub></span>
         <span class="w">${esc(b.town)} · ${fmtMin(b.t.min)} en coche (${fmtKm(b.t.km)})</span>
-        <span class="x">${bestLine(b, ref)}</span>`;
+        <span class="x">${bestLine(b, ref, withPrice[1])}</span>`;
     } else if (near){
       best.className = 'best msg';
       best.textContent = `Nada con ${FUELS[f].label} a ${state.radius} min o menos.`;
@@ -1095,14 +1095,24 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
       : `<span class="save neg">${fmtEur(-diff)} más</span>`;
   }
 
-  function bestLine(b, ref){
+  function bestLine(b, ref, segunda){
     const c = b.cost;
     let txt = `Echar ${litresOf()} L: <b>${fmtEur(c.fill)}</b>`;
     if (c.trip >= 0.01) txt += ` + ${fmtEur(c.trip)} de ir y volver`;
+    txt += '.';
+    // Frente a la más cercana: lo que te ahorras por desviarte
     if (ref && ref.id !== b.id){
       const diff = realCost(ref).total - c.total;
-      if (diff >= 0.05) txt += `. Ahorras <b>${fmtEur(diff)}</b> frente a ${esc(title(ref.brand))}, la más cercana.`;
-    } else if (ref) txt += '. Además es la más cercana.';
+      if (diff >= 0.05) txt += ` Ahorras <b>${fmtEur(diff)}</b> frente a ${esc(title(ref.brand))}, la más cercana.`;
+    } else if (ref) txt += ' Además es la más cercana.';
+    // Frente a la segunda mejor: lo que te juegas si esta no te sirve
+    if (segunda){
+      const d2 = segunda.cost.total - c.total;
+      const quien = `${esc(title(segunda.brand))}${segunda.t ? `, a ${fmtMin(segunda.t.min)}` : ''}`;
+      txt += d2 >= 0.05
+        ? `<br>Y <b>${fmtEur(d2)}</b> frente a la segunda, ${quien}.`
+        : `<br>La segunda, ${quien}, te sale prácticamente igual.`;
+    }
     return txt;
   }
 
