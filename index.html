@@ -408,7 +408,7 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     ['51','Ceuta',35.891,-5.322],
     ['52','Melilla',35.284,-2.942]
   ].map(([id, name, lat, lng]) => ({ id, name, lat, lng }));
-  const VERSION = '20260923-0032';        // se compara con version.txt para no quedarte con una copia vieja
+  const VERSION = '20260923-1048';        // se compara con version.txt para no quedarte con una copia vieja
   const PAGE = 50;                 // filas de lista por tanda: pintar 600 de golpe va lento
   const AUTO_MS = 30 * 60 * 1000; // el Ministerio publica cambios cada ~30 min
 
@@ -472,7 +472,9 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
   };
 
   // ---------- mapa ----------
-  const map = L.map('map', { zoomControl: true, attributionControl: true }).setView([40.75, -2.6], 9);
+  // España peninsular y Baleares: la vista con la que arranca la web
+  const ESPANA = L.latLngBounds([35.9, -9.4], [43.9, 4.4]);
+  const map = L.map('map', { zoomControl: true, attributionControl: true }).fitBounds(ESPANA);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19, subdomains: 'abc',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · Precios: <a href="https://geoportalgasolineras.es/">Ministerio para la Transición Ecológica</a>',
@@ -1020,19 +1022,15 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
 
     // Con toda España cargada no tiene sentido encuadrarlo todo (saldrían Canarias y Melilla):
     // solo se reencuadra cuando buscas, cuando hay un punto de partida, o cuando son pocas
-    if (fit && !state.selected && (searching || orig || withPrice.length <= 400)){
+    if (fit && !state.selected){
       const base = withPrice.length ? withPrice : visible;
-      const pts = base.map(s => [s.lat, s.lng]);
+      let pts = base.map(s => [s.lat, s.lng]);
       if (orig && !searching && state.sort !== 'price'){
-        if (state.sort === 'dist') pts.splice(8);
+        // Ordenando por cercanía, encuadra las primeras y tu punto de partida
+        if (state.sort === 'dist') pts = pts.slice(0, 8);
         pts.push([orig.lat, orig.lng]);
       }
-      if (pts.length){
-        map.invalidateSize();
-        // En el móvil la lista tapa la parte de abajo del mapa: se deja ese hueco libre
-        const hidden = matchMedia('(max-width:760px)').matches ? $('#side').getBoundingClientRect().height : 0;
-        map.fitBounds(pts, { paddingTopLeft: [40, 40], paddingBottomRight: [40, 40 + hidden], maxZoom: 14, animate: false });
-      }
+      fitTo(pts);
     }
     // pueblo elegido y sugerencias mientras escribes
     const place = $('#place');
@@ -1106,6 +1104,28 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
       if (diff >= 0.05) txt += `. Ahorras <b>${fmtEur(diff)}</b> frente a ${esc(title(ref.brand))}, la más cercana.`;
     } else if (ref) txt += '. Además es la más cercana.';
     return txt;
+  }
+
+  // Encuadra un conjunto de puntos, salvo que sea tan grande que el encuadre no diga nada.
+  // Con toda España cargada, meter Canarias y la península en la misma vista deja el mapa
+  // centrado en medio del Atlántico: en ese caso se deja el mapa como está.
+  const huecoLista = () => matchMedia('(max-width:760px)').matches ? $('#side').getBoundingClientRect().height : 0;
+
+  // Vista de España entera, dejando libre el trozo que tapa la lista
+  function vistaEspana(){
+    map.invalidateSize();
+    map.fitBounds(ESPANA, { paddingTopLeft: [10, 10], paddingBottomRight: [10, 10 + huecoLista()], animate: false });
+  }
+
+  function fitTo(pts){
+    if (!pts.length) return;
+    const b = L.latLngBounds(pts);
+    const diag = km(
+      { lat: b.getSouth(), lng: b.getWest() },
+      { lat: b.getNorth(), lng: b.getEast() });
+    if (diag > 600) return;      // más de 600 km de esquina a esquina: no se toca la vista
+    map.invalidateSize();
+    map.fitBounds(b, { paddingTopLeft: [40, 40], paddingBottomRight: [40, 40 + huecoLista()], maxZoom: 14, animate: false });
   }
 
   function where(s){
@@ -1334,12 +1354,10 @@ dialog::backdrop{background:rgba(12,16,18,.55)}
     if (state.todas) loadTodas();     // el resto de España, de fondo
   })();
   checkVersion();
+  requestAnimationFrame(vistaEspana);
   last = Date.now();
 
-  // Si ya diste permiso de ubicación antes, te localiza sola al abrir
-  navigator.permissions?.query({ name: 'geolocation' })
-    .then(p => { if (p.state === 'granted') locate({ silent: true }); })
-    .catch(() => {});
+  // Al abrir se ve España entera: para tu zona está el botón "Mi ubicación"
 })();
 </script>
 </body>
