@@ -1,0 +1,36 @@
+name: Histórico de precios
+
+# Una vez al día: mira los precios y anota cuáles han cambiado.
+# 04:25 UTC = 06:25 en España (verano) / 05:25 (invierno).
+on:
+  schedule:
+    - cron: '25 4 * * *'
+  workflow_dispatch:        # también se puede lanzar a mano desde la pestaña Actions
+
+permissions:
+  contents: write
+
+concurrency:
+  group: historico
+  cancel-in-progress: false
+
+jobs:
+  actualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comparar precios con los del día anterior
+        run: python3 tools/historico.py
+
+      - name: Guardar los cambios
+        run: |
+          if [ -z "$(git status --porcelain data/cambios.json)" ]; then
+            echo "Sin cambios que guardar"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/cambios.json
+          git commit -m "Histórico de precios: $(date -u +%Y-%m-%d)"
+          git push
